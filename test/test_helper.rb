@@ -31,6 +31,8 @@ ActiveRecord::Schema.define(version: 1) do
 
   create_table :boxes do |t|
     t.integer :green_balls_count, default: 0
+    t.integer :lifetime_balls_count, default: 0
+    t.integer :destroyed_balls_count, default: 0
   end
 
   create_table :balls do |t|
@@ -39,14 +41,19 @@ ActiveRecord::Schema.define(version: 1) do
   end
 end
 
-class User < ActiveRecord::Base
+class ApplicationRecord < ActiveRecord::Base
+  self.abstract_class = true
+  include CustomCounterCache::Model
+end
+
+class User < ApplicationRecord
   has_many :articles, dependent: :destroy
   define_counter_cache :published_count do |user|
     user.articles.where(articles: { state: 'published' }).count
   end
 end
 
-class Article < ActiveRecord::Base
+class Article < ApplicationRecord
   belongs_to :user
   update_counter_cache :user, :published_count, if: Proc.new { |article| article.state_changed? }
   has_many :comments, as: :commentable, dependent: :destroy
@@ -55,24 +62,32 @@ class Article < ActiveRecord::Base
   end
 end
 
-class Comment < ActiveRecord::Base
+class Comment < ApplicationRecord
   belongs_to :commentable, polymorphic: true
   update_counter_cache :commentable, :comments_count, if: Proc.new { |comment| comment.state_changed? }
 end
 
-class Counter < ActiveRecord::Base
+class Counter < ApplicationRecord
   belongs_to :countable, polymorphic: true
 end
 
-class Box < ActiveRecord::Base
+class Box < ApplicationRecord
   has_many :balls
   define_counter_cache :green_balls_count do |box|
     box.balls.green.count
   end
+  define_counter_cache :lifetime_balls_count do |box|
+    box.lifetime_balls_count + 1
+  end
+  define_counter_cache :destroyed_balls_count do |box|
+    box.destroyed_balls_count + 1
+  end
 end
 
-class Ball < ActiveRecord::Base
+class Ball < ApplicationRecord
   belongs_to :box
   scope :green, lambda { where(color: 'green') }
   update_counter_cache :box, :green_balls_count, if: Proc.new { |ball| ball.color_changed? }
+  update_counter_cache :box, :lifetime_balls_count, except: [:update, :destroy]
+  update_counter_cache :box, :destroyed_balls_count, only: [:destroy]
 end

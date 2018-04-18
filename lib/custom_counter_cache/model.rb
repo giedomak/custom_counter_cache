@@ -46,7 +46,7 @@ module CustomCounterCache::Model
 
       association  = association.to_sym
       cache_column = cache_column.to_sym
-      method_name  = "callback_#{cache_column}".to_sym
+      method_name  = "callback_#{association}_#{cache_column}".to_sym
       reflection   = reflect_on_association(association)
       foreign_key  = reflection.try(:foreign_key) || reflection.association_foreign_key
 
@@ -70,10 +70,15 @@ module CustomCounterCache::Model
         end
       end
 
+      skip_callback = Proc.new { |callback, opts|
+        (opts[:except].present? && opts[:except].include?(callback)) ||
+        (opts[:only].present?   && !opts[:only].include?(callback))
+      }
+
       # set callbacks
-      after_create  method_name, options
-      after_update  method_name, options
-      after_destroy method_name, options
+      after_create  method_name, options unless skip_callback.call(:create, options)
+      after_update  method_name, options unless skip_callback.call(:update, options)
+      after_destroy method_name, options unless skip_callback.call(:destroy, options)
 
     rescue StandardError => e
       # Support Heroku's database-less assets:precompile pre-deploy step:
@@ -81,5 +86,3 @@ module CustomCounterCache::Model
     end
   end
 end
-
-ActiveRecord::Base.send :include, CustomCounterCache::Model
